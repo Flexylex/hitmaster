@@ -159,7 +159,7 @@
 <!-- ============ SETUP PANEL ============ -->
 <div class="panel" id="panel">
   <div class="inner">
-    <h1>Set up Needle Drop</h1>
+    <h1>Set up Hitmaster</h1>
     <p class="lede">One-time setup. Your Spotify app does the playing — this page just tells it what to play.</p>
 
     <div id="authStatus"></div>
@@ -200,7 +200,7 @@
 <!-- ============ GAME ============ -->
 <div class="wrap">
   <header>
-    <div class="mark">NEEDLE<span>·</span>DROP</div>
+    <div class="mark">Hitmaster<span>·</span>#2</div>
     <div class="hdr-right">
       <div class="round" id="round">—</div>
       <button class="gear" id="openPanel" aria-label="Settings">⚙</button>
@@ -458,7 +458,7 @@ function renderPlayers(){
       <button class="pbtn" aria-label="Subtract a point from ${p.name}">−</button>
       <button class="pbtn plus" aria-label="Give ${p.name} a point">+</button>`;
     row.querySelector('.pname').textContent = p.name;
-    const [del,,minus,plus] = row.querySelectorAll('button');
+    const [del, minus, plus] = row.querySelectorAll('button');
     plus.onclick  = ()=>bump(i, 1);
     minus.onclick = ()=>bump(i,-1);
     del.onclick   = ()=>{ state.players.splice(i,1); savePlayers(); };
