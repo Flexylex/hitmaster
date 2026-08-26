@@ -321,9 +321,9 @@ async function api(path, opts={}){
   const r = await fetch('https://api.spotify.com/v1'+path, {
     ...opts, headers:{Authorization:'Bearer '+t, 'Content-Type':'application/json', ...(opts.headers||{})}});
   if(r.status === 204) return null;
-  if(r.status === 404) throw new Error('NODEVICE');
   if(!r.ok){
     let m=''; try{ m=(await r.json()).error?.message||''; }catch{}
+    if(r.status === 404 && path.startsWith('/me/player')) throw new Error('NODEVICE');
     throw new Error(`${r.status} on ${path.split('?')[0]} — ${m || 'Spotify gave no detail'}`);
   }
   return r.json();
@@ -362,23 +362,32 @@ async function loadPlaylist(){
   if(!out.length) toast('No playable tracks in that playlist.');
 }
 
-async function findDevice(){
+async function ensureDevice(){
   const d = await api('/me/player/devices');
   const list = d?.devices || [];
   if(!list.length) throw new Error('NODEVICE');
-  const pick = list.find(x=>x.is_active) || list.find(x=>x.type==='Smartphone') || list[0];
+  const pick = list.find(x => x.is_active)
+            || list.find(x => x.type === 'Smartphone')
+            || list[0];
   state.deviceId = pick.id;
+  if(!pick.is_active){
+    // Hand playback over to this device, then give Spotify a moment to accept it.
+    await api('/me/player', {method:'PUT', body: JSON.stringify({device_ids:[pick.id], play:false})});
+    await new Promise(r => setTimeout(r, 800));
+  }
   return pick.id;
 }
 
 async function playTrack(uri){
-  if(!state.deviceId) await findDevice();
-  try{
-    await api(`/me/player/play?device_id=${state.deviceId}`,{method:'PUT',body:JSON.stringify({uris:[uri]})});
-  }catch(e){
-    if(e.message==='NODEVICE'){ state.deviceId=null; await findDevice();
-      await api(`/me/player/play?device_id=${state.deviceId}`,{method:'PUT',body:JSON.stringify({uris:[uri]})});
-    } else throw e;
+  if(!state.deviceId) await ensureDevice();
+  const send = () => api(`/me/player/play?device_id=${state.deviceId}`,
+                         {method:'PUT', body: JSON.stringify({uris:[uri]})});
+  try{ await send(); }
+  catch(e){
+    if(e.message !== 'NODEVICE') throw e;
+    state.deviceId = null;
+    await ensureDevice();
+    await send();
   }
 }
 
@@ -476,32 +485,32 @@ async function diagnose(){
   if(!pid) out.push('Playlist: link could not be read');
   else{
     try{
-      const p = await api(`/playlists/${pid}`);
-      out.push(`Playlist: ${p?.name || 'unnamed'} (${p?.tracks?.total ?? '?'} tracks)`);
+      const p = await api(`/playlists/${pid}?fields=name`);
+      const c = await api(`/playlists/${pid}/tracks?limit=1&fields=total`);
+      out.push(`Playlist: ${p?.name || 'unnamed'} (${c?.total ?? '?'} tracks)`);
     }catch(e){ out.push('Playlist: ' + e.message); }
   }
 
-  // 3. Is there anything to play on?
+  // 3. Can we take control of a device and command it?
   try{
+    const id = await ensureDevice();
     const d = await api('/me/player/devices');
-    out.push((d?.devices || []).length
-      ? 'Devices: ' + d.devices.map(x => x.name).join(', ')
-      : 'Devices: none — open Spotify and play anything for a second');
-  }catch(e){ out.push('Devices: ' + e.message); }
-
-  // 4. Can we actually command playback? The only test that matters.
-  try{
-    await api('/me/player/volume?volume_percent=100', {method:'PUT'});
+    const dev = (d?.devices || []).find(x => x.id === id);
+    out.push(`Device: ${dev?.name || id}${dev?.is_active ? ' (active)' : ' (idle)'}`);
+    await api(`/me/player/volume?volume_percent=${dev?.volume_percent ?? 80}&device_id=${id}`, {method:'PUT'});
     out.push('');
     out.push('Playback control: allowed. You are good to go.');
     show(false);
   }catch(e){
     out.push('');
-    out.push('Playback control: refused');
-    out.push(e.message);
-    out.push('');
-    out.push('This endpoint is Premium-only. If your plan says free,');
-    out.push('Spotify will not let any app pick a specific track.');
+    if(e.message === 'NODEVICE'){
+      out.push('Playback control: no device would take the handover.');
+      out.push('Open Spotify, start any song, leave it playing,');
+      out.push('then come back and run this again.');
+    }else{
+      out.push('Playback control: refused');
+      out.push(e.message);
+    }
     show(true);
   }
   return;
