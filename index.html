@@ -137,6 +137,15 @@
   .status{font-family:var(--mono);font-size:11.5px;padding:11px 12px;border-radius:9px;margin-bottom:18px;line-height:1.6;white-space:pre-wrap}
   .status.ok{background:rgba(127,216,190,.11);color:var(--mint)}
   .status.warn{background:rgba(242,101,63,.13);color:var(--coral)}
+  #pickList{margin-top:9px;max-height:210px;overflow-y:auto}
+  .pickrow{
+    display:block;width:100%;text-align:left;background:rgba(0,0,0,.22);border:1px solid var(--line);
+    border-radius:8px;padding:10px 12px;margin-bottom:6px;color:var(--paper);
+    font-family:var(--display);font-size:14px;cursor:pointer;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .pickrow:disabled{color:rgba(245,239,230,.28);cursor:not-allowed}
+  .pickmsg{font-family:var(--mono);font-size:11.5px;color:var(--dim);padding:8px 2px}
   .toast{
     position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:60;
     background:var(--coral);color:#fff;padding:12px 17px;border-radius:10px;font-size:13.5px;
@@ -169,7 +178,9 @@
     <div class="field">
       <label>3 — Playlist</label>
       <input id="playlistUrl" placeholder="Paste a Spotify playlist link" autocomplete="off" spellcheck="false">
-      <p class="hint">Share → Copy link to playlist. Works with public, private, and collaborative playlists you can see.</p>
+      <button class="ghost" id="pickBtn" style="width:100%;margin-top:9px">CHOOSE FROM MY PLAYLISTS</button>
+      <div id="pickList"></div>
+      <p class="hint">Since February 2026 Spotify only shares playlist contents with apps for playlists you own or collaborate on. Anything else is locked, however you link to it.</p>
     </div>
 
     <button class="primary" id="saveBtn">Save and connect Spotify</button>
@@ -339,12 +350,12 @@ async function loadPlaylist(){
   if(!id){ toast('That playlist link looks off.'); return; }
   $('nextBtn').textContent = 'Loading playlist…';
   const out = [];
-  let url = `/playlists/${id}/tracks?limit=100&fields=next,items(is_local,track(name,uri,album(release_date),artists(name)))`;
+  let url = `/playlists/${id}/items?limit=50`;
   try{
     while(url && out.length < 1000){
       const d = await api(url);
-      for(const it of d.items||[]){
-        const t = it.track;
+      for(const it of (d?.items || [])){
+        const t = it.item || it.track;          // Feb 2026 renamed track -> item
         if(!t || it.is_local || !t.uri || !t.uri.startsWith('spotify:track:')) continue;
         out.push({
           uri: t.uri, name: t.name,
@@ -352,9 +363,15 @@ async function loadPlaylist(){
           year: (t.album?.release_date||'').slice(0,4) || '????'
         });
       }
-      url = d.next ? d.next.replace('https://api.spotify.com/v1','') : null;
+      url = d?.next ? d.next.replace('https://api.spotify.com/v1','') : null;
     }
-  }catch(e){ handle(e); $('nextBtn').textContent='Play a song'; return; }
+  }catch(e){
+    if(String(e.message).startsWith('403')){
+      toast('Spotify only lets this app read playlists you own. Pick one of yours below.', 7000);
+      openPanel();
+    }else handle(e);
+    $('nextBtn').textContent='Play a song'; return;
+  }
 
   state.tracks = out; state.played = [];
   $('nextBtn').textContent = 'Play a song';
@@ -456,6 +473,38 @@ let lock;
 async function keepAwake(){ try{ lock = await navigator.wakeLock?.request('screen'); }catch{} }
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') keepAwake(); });
 
+/* ---------- playlist picker ---------- */
+async function pickPlaylist(){
+  const box = $('pickList');
+  box.innerHTML = '<div class="pickmsg">Loading your playlists…</div>';
+  try{
+    const me = await api('/me');
+    const d  = await api('/me/playlists?limit=50');
+    box.innerHTML = '';
+    let readable = 0;
+    for(const p of (d?.items || [])){
+      const mine = p.owner?.id === me.id || p.collaborative;
+      if(mine) readable++;
+      const b = document.createElement('button');
+      b.className = 'pickrow';
+      b.disabled = !mine;
+      b.textContent = (mine ? '' : 'locked — ') + (p.name || 'Untitled');
+      b.onclick = () => {
+        $('playlistUrl').value = p.uri;
+        store.set('nd_playlist', p.uri);
+        box.innerHTML = '<div class="pickmsg">Using: ' + (p.name || 'Untitled') + '</div>';
+      };
+      box.appendChild(b);
+    }
+    if(!box.children.length) box.innerHTML = '<div class="pickmsg">No playlists on this account yet.</div>';
+    else if(!readable) box.insertAdjacentHTML('afterbegin',
+      '<div class="pickmsg">None of these are yours. Make your own playlist in Spotify, then reopen this list.</div>');
+  }catch(e){
+    box.innerHTML = '<div class="pickmsg"></div>';
+    box.firstChild.textContent = e.message;
+  }
+}
+
 /* ---------- diagnostics ---------- */
 async function diagnose(){
   const box = $('authStatus'); const out = [];
@@ -478,39 +527,39 @@ async function diagnose(){
   }
   out.length = 0;
   out.push(`Account: ${me.display_name || me.id}`);
-  out.push(`Plan: ${me.product || 'not reported — reconnect to refresh permissions'}`);
+  out.push(`Plan: ${me.product || 'not reported by Spotify (field was removed for dev apps)'}`);
 
-  // 2. Playlist reachable?
+  // 2. Playlist reachable, and do we own it?
   const pid = playlistId(store.get('nd_playlist') || '');
-  if(!pid) out.push('Playlist: link could not be read');
+  if(!pid) out.push('Playlist: none chosen');
   else{
     try{
-      const p = await api(`/playlists/${pid}?fields=name`);
-      const c = await api(`/playlists/${pid}/tracks?limit=1&fields=total`);
-      out.push(`Playlist: ${p?.name || 'unnamed'} (${c?.total ?? '?'} tracks)`);
+      const p = await api(`/playlists/${pid}`);
+      const mine = p?.owner?.id === me.id || p?.collaborative;
+      out.push(`Playlist: ${p?.name || 'unnamed'}`);
+      out.push(`Owner: ${p?.owner?.display_name || p?.owner?.id}${mine ? ' (you)' : ' — NOT YOU'}`);
+      if(!mine) out.push('  Spotify will not share its contents. Pick one of your own.');
+      else{
+        const c = await api(`/playlists/${pid}/items?limit=1`);
+        out.push(`Readable: yes (${c?.total ?? '?'} tracks)`);
+      }
     }catch(e){ out.push('Playlist: ' + e.message); }
   }
 
-  // 3. Can we take control of a device and command it?
+  // 3. Can we take control of a device?
   try{
     const id = await ensureDevice();
     const d = await api('/me/player/devices');
     const dev = (d?.devices || []).find(x => x.id === id);
     out.push(`Device: ${dev?.name || id}${dev?.is_active ? ' (active)' : ' (idle)'}`);
-    await api(`/me/player/volume?volume_percent=${dev?.volume_percent ?? 80}&device_id=${id}`, {method:'PUT'});
     out.push('');
-    out.push('Playback control: allowed. You are good to go.');
+    out.push('Ready. Press Play a song.');
     show(false);
   }catch(e){
     out.push('');
-    if(e.message === 'NODEVICE'){
-      out.push('Playback control: no device would take the handover.');
-      out.push('Open Spotify, start any song, leave it playing,');
-      out.push('then come back and run this again.');
-    }else{
-      out.push('Playback control: refused');
-      out.push(e.message);
-    }
+    out.push(e.message === 'NODEVICE'
+      ? 'Device: no device would take the handover.\nOpen Spotify, start any song, then run this again.'
+      : 'Device: ' + e.message);
     show(true);
   }
   return;
@@ -533,6 +582,7 @@ $('playlistUrl').value = store.get('nd_playlist')   || '';
 
 $('openPanel').onclick  = openPanel;
 $('diagBtn').onclick    = diagnose;
+$('pickBtn').onclick    = pickPlaylist;
 $('closePanel').onclick = ()=> $('panel').classList.remove('open');
 $('saveBtn').onclick = async ()=>{
   store.set('nd_client_id', $('clientId').value.trim());
