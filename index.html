@@ -244,7 +244,7 @@ const J = { get(k,d){ try { return JSON.parse(store.get(k)) ?? d; } catch { retu
             set(k,v){ store.set(k, JSON.stringify(v)); } };
 
 const REDIRECT_URI = location.origin + location.pathname;
-const SCOPES = 'user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative';
+const SCOPES = 'user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative';
 const $ = id => document.getElementById(id);
 
 let state = {
@@ -298,6 +298,7 @@ async function exchangeCode(code){
 function saveTokens(d){
   store.set('nd_token', d.access_token);
   if(d.refresh_token) store.set('nd_refresh', d.refresh_token);
+  store.set('nd_scopes', SCOPES);
   store.set('nd_expires', String(Date.now() + (d.expires_in-60)*1000));
 }
 async function token(){
@@ -468,31 +469,42 @@ async function diagnose(){
   }
   out.length = 0;
   out.push(`Account: ${me.display_name || me.id}`);
-  out.push(`Plan: ${me.product}`);
+  out.push(`Plan: ${me.product || 'not reported — reconnect to refresh permissions'}`);
 
   // 2. Playlist reachable?
   const pid = playlistId(store.get('nd_playlist') || '');
   if(!pid) out.push('Playlist: link could not be read');
   else{
     try{
-      const p = await api(`/playlists/${pid}?fields=name,tracks(total)`);
-      out.push(`Playlist: ${p.name} (${p.tracks.total} tracks)`);
+      const p = await api(`/playlists/${pid}`);
+      out.push(`Playlist: ${p?.name || 'unnamed'} (${p?.tracks?.total ?? '?'} tracks)`);
     }catch(e){ out.push('Playlist: ' + e.message); }
   }
 
   // 3. Is there anything to play on?
   try{
     const d = await api('/me/player/devices');
-    out.push(d.devices.length
+    out.push((d?.devices || []).length
       ? 'Devices: ' + d.devices.map(x => x.name).join(', ')
       : 'Devices: none — open Spotify and play anything for a second');
   }catch(e){ out.push('Devices: ' + e.message); }
 
-  if(me.product !== 'premium'){
+  // 4. Can we actually command playback? The only test that matters.
+  try{
+    await api('/me/player/volume?volume_percent=100', {method:'PUT'});
     out.push('');
-    out.push('Reading works, but playback control needs Premium.');
+    out.push('Playback control: allowed. You are good to go.');
+    show(false);
+  }catch(e){
+    out.push('');
+    out.push('Playback control: refused');
+    out.push(e.message);
+    out.push('');
+    out.push('This endpoint is Premium-only. If your plan says free,');
+    out.push('Spotify will not let any app pick a specific track.');
+    show(true);
   }
-  show(me.product !== 'premium');
+  return;
 }
 
 /* ---------- panel ---------- */
@@ -524,7 +536,7 @@ $('saveBtn').onclick = async ()=>{
   }
 };
 $('resetAll').onclick = ()=>{
-  ['nd_client_id','nd_playlist','nd_token','nd_refresh','nd_expires','nd_verifier','nd_players'].forEach(store.del);
+  ['nd_client_id','nd_playlist','nd_token','nd_refresh','nd_expires','nd_verifier','nd_scopes','nd_players'].forEach(store.del);
   location.href = REDIRECT_URI;
 };
 
@@ -550,6 +562,12 @@ $('newPlayer').addEventListener('keydown', e=>{ if(e.key==='Enter') $('addPlayer
     const ok = await exchangeCode(params.get('code'));
     history.replaceState({},'',REDIRECT_URI);
     if(ok){ toast('Connected.'); $('panel').classList.remove('open'); }
+  }
+  if(store.get('nd_refresh') && store.get('nd_scopes') !== SCOPES){
+    store.del('nd_refresh'); store.del('nd_token'); store.del('nd_expires');
+    openPanel();
+    toast('Permissions changed — tap Save and connect Spotify again.', 6000);
+    return;
   }
   if(!store.get('nd_client_id') || !store.get('nd_playlist') || !store.get('nd_refresh')) openPanel();
   else await loadPlaylist();
