@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -135,7 +134,7 @@
     border-radius:9px;padding:11px 12px;font-family:var(--mono);font-size:11.5px;word-break:break-all;color:var(--mint)
   }
   .copybox button{background:none;border:0;color:var(--dim);font-size:15px;cursor:pointer;flex-shrink:0}
-  .status{font-family:var(--mono);font-size:11.5px;padding:11px 12px;border-radius:9px;margin-bottom:18px;line-height:1.5}
+  .status{font-family:var(--mono);font-size:11.5px;padding:11px 12px;border-radius:9px;margin-bottom:18px;line-height:1.6;white-space:pre-wrap}
   .status.ok{background:rgba(127,216,190,.11);color:var(--mint)}
   .status.warn{background:rgba(242,101,63,.13);color:var(--coral)}
   .toast{
@@ -176,7 +175,10 @@
     <button class="primary" id="saveBtn">Save and connect Spotify</button>
 
     <div class="row" style="margin-top:12px">
+      <button class="ghost" id="diagBtn">WHAT'S WRONG?</button>
       <button class="ghost" id="closePanel">Close</button>
+    </div>
+    <div class="row" style="margin-top:10px">
       <button class="ghost" id="resetAll">Reset everything</button>
     </div>
 
@@ -318,11 +320,10 @@ async function api(path, opts={}){
   const r = await fetch('https://api.spotify.com/v1'+path, {
     ...opts, headers:{Authorization:'Bearer '+t, 'Content-Type':'application/json', ...(opts.headers||{})}});
   if(r.status === 204) return null;
-  if(r.status === 403) throw new Error('Spotify refused that. Premium is required to control playback, and your account must be on the app allowlist.');
   if(r.status === 404) throw new Error('NODEVICE');
   if(!r.ok){
     let m=''; try{ m=(await r.json()).error?.message||''; }catch{}
-    throw new Error(m || ('Spotify error ' + r.status));
+    throw new Error(`${r.status} on ${path.split('?')[0]} — ${m || 'Spotify gave no detail'}`);
   }
   return r.json();
 }
@@ -445,6 +446,55 @@ let lock;
 async function keepAwake(){ try{ lock = await navigator.wakeLock?.request('screen'); }catch{} }
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') keepAwake(); });
 
+/* ---------- diagnostics ---------- */
+async function diagnose(){
+  const box = $('authStatus'); const out = [];
+  const show = (bad) => { box.className = 'status ' + (bad ? 'warn' : 'ok'); box.textContent = out.join('\n'); };
+
+  out.push('Checking…'); show(false);
+
+  // 1. Can we read the account at all? Isolates allowlist + Web API scope problems.
+  let me;
+  try{ me = await api('/me'); }
+  catch(e){
+    out.length = 0;
+    out.push('BLOCKED AT STEP 1: reading your account');
+    out.push(e.message);
+    out.push('');
+    out.push('Most likely one of:');
+    out.push('• Web API not ticked in your app settings on the dashboard');
+    out.push('• Your own Spotify email is not under Users and Access');
+    show(true); return;
+  }
+  out.length = 0;
+  out.push(`Account: ${me.display_name || me.id}`);
+  out.push(`Plan: ${me.product}`);
+
+  // 2. Playlist reachable?
+  const pid = playlistId(store.get('nd_playlist') || '');
+  if(!pid) out.push('Playlist: link could not be read');
+  else{
+    try{
+      const p = await api(`/playlists/${pid}?fields=name,tracks(total)`);
+      out.push(`Playlist: ${p.name} (${p.tracks.total} tracks)`);
+    }catch(e){ out.push('Playlist: ' + e.message); }
+  }
+
+  // 3. Is there anything to play on?
+  try{
+    const d = await api('/me/player/devices');
+    out.push(d.devices.length
+      ? 'Devices: ' + d.devices.map(x => x.name).join(', ')
+      : 'Devices: none — open Spotify and play anything for a second');
+  }catch(e){ out.push('Devices: ' + e.message); }
+
+  if(me.product !== 'premium'){
+    out.push('');
+    out.push('Reading works, but playback control needs Premium.');
+  }
+  show(me.product !== 'premium');
+}
+
 /* ---------- panel ---------- */
 function openPanel(){ $('panel').classList.add('open'); refreshStatus(); }
 function refreshStatus(){
@@ -461,6 +511,7 @@ $('clientId').value    = store.get('nd_client_id')  || '';
 $('playlistUrl').value = store.get('nd_playlist')   || '';
 
 $('openPanel').onclick  = openPanel;
+$('diagBtn').onclick    = diagnose;
 $('closePanel').onclick = ()=> $('panel').classList.remove('open');
 $('saveBtn').onclick = async ()=>{
   store.set('nd_client_id', $('clientId').value.trim());
