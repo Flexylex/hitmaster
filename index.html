@@ -79,6 +79,10 @@
     display:flex;flex-direction:column;padding:22px 18px;text-align:center;
   }
   .pair{flex:2;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .cover{
+    width:clamp(70px,24vw,100px);aspect-ratio:1;object-fit:cover;display:block;
+    border-radius:7px;margin:0 0 15px;border:1px solid rgba(27,16,41,.14);
+  }
   .artist{
     font-weight:800;font-size:clamp(21px,7.4vw,29px);
     letter-spacing:-.02em;line-height:1.05;margin:0;
@@ -135,6 +139,11 @@
   .field label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--dim);margin-bottom:7px}
   .field input{width:100%}
   .hint{font-size:12.5px;color:rgba(245,239,230,.4);margin-top:7px;line-height:1.45}
+  .toggle{
+    display:flex;align-items:center;gap:10px;cursor:pointer;
+    font-size:14.5px;color:var(--paper);padding:4px 0;
+  }
+  .toggle input{width:19px;height:19px;accent-color:var(--gold);flex:none;margin:0}
   .copybox{
     display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.3);border:1px solid var(--line);
     border-radius:9px;padding:11px 12px;font-family:var(--mono);font-size:11.5px;word-break:break-all;color:var(--mint)
@@ -189,6 +198,12 @@
       <p class="hint">Since February 2026 Spotify only shares playlist contents with apps for playlists you own or collaborate on. Anything else is locked, however you link to it.</p>
     </div>
 
+    <div class="field">
+      <label>4 — Card</label>
+      <label class="toggle"><input type="checkbox" id="showArt"> Show album artwork when revealed</label>
+      <p class="hint">Useful for soundtracks, where the cover names the film. Never shown face down.</p>
+    </div>
+
     <button class="primary" id="saveBtn">Save and connect Spotify</button>
 
     <div class="row" style="margin-top:12px">
@@ -222,6 +237,7 @@
       </div>
       <div class="face front">
         <div class="pair">
+          <img class="cover" id="fCover" alt="" hidden>
           <p class="artist" id="fArtist">—</p>
           <h3 class="title" id="fTitle">—</h3>
         </div>
@@ -376,6 +392,7 @@ async function loadPlaylist(){
           uri: t.uri, name: t.name,
           artist: (t.artists||[]).map(a=>a.name).join(', '),
           isrc: t.external_ids?.isrc || null,
+          art: t.album?.images?.[1]?.url || t.album?.images?.[0]?.url || null,
           year: (t.album?.release_date||'').slice(0,4) || '????'
         });
       }
@@ -544,6 +561,14 @@ async function resolveYear(t){
 }
 
 /* ---------- game ---------- */
+/* ---------- cover art ---------- */
+const artOn = () => store.get('nd_showart') === '1';
+function paintCover(t){
+  const el = $('fCover');
+  if(artOn() && t?.art){ el.src = t.art; el.hidden = false; }
+  else { el.hidden = true; el.removeAttribute('src'); }
+}
+
 function setFlipped(on){
   $('card').classList.toggle('flipped', on);
   $('card').setAttribute('aria-label', on ? 'Hide the song' : 'Reveal the song');
@@ -566,6 +591,7 @@ async function nextSong(){
     $('fYear').textContent  = t.year;
     $('fTitle').textContent = t.name;
     $('fArtist').textContent= t.artist;
+    paintCover(t);
     $('fFoot').textContent  = 'CHECKING RELEASE YEAR…';
     $('round').textContent  = `${state.played.length} / ${state.tracks.length}`;
     $('nextBtn').textContent = 'Next song';
@@ -725,6 +751,12 @@ $('copyUri').onclick = ()=>{ navigator.clipboard?.writeText(REDIRECT_URI); toast
 $('clientId').value    = store.get('nd_client_id')  || '';
 $('playlistUrl').value = store.get('nd_playlist')   || '';
 
+$('showArt').checked = artOn();
+$('showArt').onchange = e => {
+  store.set('nd_showart', e.target.checked ? '1' : '0');
+  paintCover(state.current);
+};
+
 $('openPanel').onclick  = openPanel;
 $('diagBtn').onclick    = diagnose;
 $('pickBtn').onclick    = pickPlaylist;
@@ -740,7 +772,7 @@ $('saveBtn').onclick = async ()=>{
   }
 };
 $('resetAll').onclick = ()=>{
-  ['nd_client_id','nd_playlist','nd_token','nd_refresh','nd_expires','nd_verifier','nd_scopes','nd_players','nd_years'].forEach(store.del);
+  ['nd_client_id','nd_playlist','nd_token','nd_refresh','nd_expires','nd_verifier','nd_scopes','nd_players','nd_years','nd_showart'].forEach(store.del);
   location.href = REDIRECT_URI;
 };
 
