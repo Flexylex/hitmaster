@@ -20,6 +20,7 @@
     --line:rgba(245,239,230,.14);
     --display:'Bricolage Grotesque',system-ui,sans-serif;
     --mono:'DM Mono',ui-monospace,monospace;
+    --cardw:340px;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%}
@@ -41,7 +42,8 @@
   .gear{background:none;border:0;color:var(--dim);font-size:19px;padding:4px;cursor:pointer;line-height:1}
 
   /* ---- the card (signature element) ---- */
-  .stage{perspective:1400px;margin:0 auto;width:100%;max-width:340px}
+  .stage{perspective:1400px;width:100%}
+  .cardwrap{container-type:inline-size;width:100%;max-width:var(--cardw);margin:0 auto}
   .card{
     position:relative;width:100%;aspect-ratio:3/4;
     transform-style:preserve-3d;transition:transform .62s cubic-bezier(.2,.75,.25,1);
@@ -76,32 +78,32 @@
   /* front = T3 matched pair over a year block */
   .front{
     transform:rotateY(180deg);background:var(--paper);color:var(--ink-deep);
-    display:flex;flex-direction:column;padding:22px 18px;text-align:center;
+    display:flex;flex-direction:column;padding:6.5cqw 5.3cqw;text-align:center;
   }
   .pair{flex:2;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0}
   .card.hasart .pair{flex:2.6}
   .cover{
-    width:clamp(140px,48vw,200px);aspect-ratio:1;max-height:58%;
+    width:55cqw;aspect-ratio:1;max-height:58%;
     object-fit:cover;display:block;
-    border-radius:9px;margin:0 0 13px;border:1px solid rgba(27,16,41,.14);
+    border-radius:2.6cqw;margin:0 0 3.9cqw;border:1px solid rgba(27,16,41,.14);
   }
   .artist{
-    font-weight:800;font-size:clamp(21px,7.4vw,29px);
+    font-weight:800;font-size:clamp(21px,8.5cqw,44px);
     letter-spacing:-.02em;line-height:1.05;margin:0;
   }
   .title{
-    font-weight:400;font-size:clamp(18px,6.3vw,24px);
-    letter-spacing:.01em;line-height:1.25;margin:14px 0 0;
+    font-weight:400;font-size:clamp(18px,7.2cqw,37px);
+    letter-spacing:.01em;line-height:1.25;margin:4.1cqw 0 0;
   }
-  .yearblock{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .yearblock{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0}
   .year{
     font-family:var(--mono);font-weight:500;line-height:.86;
-    font-size:clamp(50px,16.5vw,70px);letter-spacing:-.04em;margin:0;
+    font-size:clamp(50px,19cqw,98px);letter-spacing:-.04em;margin:0;
   }
-  .front .foot{margin-top:11px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:rgba(27,16,41,.42)}
+  .front .foot{margin-top:3.2cqw;font-family:var(--mono);font-size:clamp(10px,2.9cqw,15px);letter-spacing:.14em;color:rgba(27,16,41,.42)}
 
   /* ---- controls ---- */
-  .controls{margin:22px auto 0;width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px}
+  .controls{margin:22px auto 0;width:100%;max-width:var(--cardw);display:flex;flex-direction:column;gap:10px}
   button.primary{
     width:100%;padding:17px;border:0;border-radius:12px;background:var(--gold);color:var(--ink-deep);
     font-family:var(--display);font-weight:800;font-size:16.5px;letter-spacing:-.01em;cursor:pointer;
@@ -168,6 +170,21 @@
     background:var(--coral);color:#fff;padding:12px 17px;border-radius:10px;font-size:13.5px;
     max-width:88%;text-align:center;line-height:1.4;box-shadow:0 10px 26px -8px rgba(0,0,0,.6)
   }
+  @media (min-width:820px) and (min-height:700px){
+    :root{--cardw:460px}
+    .wrap{max-width:700px;padding:26px 24px 44px}
+    .mark{font-size:18px}
+    .round{font-size:14px}
+    .gear{font-size:23px}
+    button.primary{padding:21px;font-size:19px;border-radius:14px}
+    button.ghost{padding:15px;font-size:13px}
+    .board h2{font-size:12px}
+    .pname{font-size:19px}
+    .pscore{font-size:23px;min-width:38px}
+    .pbtn{width:40px;height:40px;font-size:20px}
+    input{font-size:16px;padding:13px 14px}
+    .panel .inner{max-width:640px}
+  }
   @media (prefers-reduced-motion:reduce){.card{transition:none}}
 </style>
 </head>
@@ -201,13 +218,20 @@
     </div>
 
     <div class="field">
-      <label>4 — Card</label>
+      <label>4 — Playback device</label>
+      <button class="ghost" id="devBtn" style="width:100%">FIND DEVICES</button>
+      <div id="devList"></div>
+      <p class="hint">Which Spotify app plays the music. Leave it automatic and it picks whatever is already playing.</p>
+    </div>
+
+    <div class="field">
+      <label>5 — Card</label>
       <label class="toggle"><input type="checkbox" id="showArt"> Show album artwork when revealed</label>
       <p class="hint">Useful for soundtracks, where the cover names the film. Never shown face down.</p>
     </div>
 
     <div class="field">
-      <label>5 — Play limit</label>
+      <label>6 — Play limit</label>
       <input id="playLimit" type="number" min="0" max="600" step="5" inputmode="numeric">
       <p class="hint">Seconds before the song pauses itself. Resume starts a fresh countdown. Use 0 for no limit.</p>
     </div>
@@ -219,6 +243,7 @@
       <button class="ghost" id="closePanel">Close</button>
     </div>
     <div class="row" style="margin-top:10px">
+      <button class="ghost" id="freshRound">START A FRESH ROUND</button>
       <button class="ghost" id="resetAll">Reset everything</button>
     </div>
 
@@ -236,7 +261,7 @@
     </div>
   </header>
 
-  <div class="stage">
+  <div class="cardwrap"><div class="stage">
     <button class="card" id="card" aria-label="Reveal the song">
       <div class="face back">
         <div class="label"><b>?</b></div>
@@ -255,7 +280,7 @@
         </div>
       </div>
     </button>
-  </div>
+  </div></div>
 
   <div class="controls">
     <button class="primary" id="nextBtn">Play a song</button>
@@ -414,17 +439,21 @@ async function loadPlaylist(){
     $('nextBtn').textContent='Play a song'; return;
   }
 
-  state.tracks = out; state.played = [];
-  $('nextBtn').textContent = 'Play a song';
-  $('round').textContent = out.length ? `0 / ${out.length}` : '—';
+  state.tracks = out;
+  state.played = loadPlayed(id, out);
+  $('nextBtn').textContent = state.played.length ? 'Next song' : 'Play a song';
+  $('round').textContent = out.length ? `${state.played.length} / ${out.length}` : '—';
   if(!out.length) toast('No playable tracks in that playlist.');
+  else if(state.played.length) toast(`Resuming — ${state.played.length} already played.`, 4500);
 }
 
 async function ensureDevice(){
   const d = await api('/me/player/devices');
   const list = d?.devices || [];
   if(!list.length) throw new Error('NODEVICE');
-  const pick = list.find(x => x.is_active)
+  const saved = store.get('nd_device');
+  const pick = (saved && list.find(x => x.id === saved))
+            || list.find(x => x.is_active)
             || list.find(x => x.type === 'Smartphone')
             || list[0];
   state.deviceId = pick.id;
@@ -569,6 +598,27 @@ async function resolveYear(t){
 }
 
 /* ---------- game ---------- */
+/* ---------- played history ----------
+   Kept per playlist so switching between two playlists keeps both
+   half-finished games intact. */
+function savePlayed(){
+  const pid = playlistId(store.get('nd_playlist') || '');
+  if(!pid) return;
+  const all = J.get('nd_played', {});
+  all[pid] = state.played;
+  J.set('nd_played', all);
+}
+function loadPlayed(pid, tracks){
+  const known = new Set(tracks.map(t => t.uri));
+  // Drop anything no longer in the playlist, so edits don't leave ghosts.
+  return (J.get('nd_played', {})[pid] || []).filter(u => known.has(u));
+}
+function resetPlayed(){
+  state.played = [];
+  savePlayed();
+  $('round').textContent = state.tracks.length ? `0 / ${state.tracks.length}` : '—';
+}
+
 /* ---------- play limit ---------- */
 function limitSecs(){
   const n = parseInt(store.get('nd_limit') ?? '40', 10);
@@ -619,7 +669,7 @@ function setFlipped(on){
 async function nextSong(){
   if(!state.tracks.length){ await loadPlaylist(); if(!state.tracks.length) return; }
   const left = state.tracks.filter(t=>!state.played.includes(t.uri));
-  if(!left.length){ state.played = []; toast('Every song has played — starting over.'); }
+  if(!left.length){ state.played = []; savePlayed(); toast('Every song has played — starting over.'); }
   const pool = left.length ? left : state.tracks;
   const t = pool[Math.floor(Math.random()*pool.length)];
 
@@ -629,6 +679,7 @@ async function nextSong(){
   try{
     await playTrack(t.uri);
     state.current = t; state.played.push(t.uri); state.round++;
+    savePlayed();
     startClock();
     $('fYear').textContent  = t.year;
     $('fTitle').textContent = t.name;
@@ -685,6 +736,39 @@ function savePlayers(){ J.set('nd_players', state.players); renderPlayers(); }
 let lock;
 async function keepAwake(){ try{ lock = await navigator.wakeLock?.request('screen'); }catch{} }
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') keepAwake(); });
+
+/* ---------- device picker ---------- */
+async function pickDevice(){
+  const box = $('devList');
+  box.innerHTML = '<div class="pickmsg">Looking for devices…</div>';
+  try{
+    const d = await api('/me/player/devices');
+    const list = d?.devices || [];
+    box.innerHTML = '';
+    if(!list.length){
+      box.innerHTML = '<div class="pickmsg">None found. Open Spotify on the machine you want to hear it through, play anything for a second, then look again.</div>';
+      return;
+    }
+    const saved = store.get('nd_device');
+    for(const dev of list){
+      const b = document.createElement('button');
+      b.className = 'pickrow';
+      b.textContent = (dev.id === saved ? '● ' : '') + dev.name
+                    + ' — ' + String(dev.type||'').toLowerCase()
+                    + (dev.is_active ? ' · playing' : '');
+      b.onclick = () => { store.set('nd_device', dev.id); state.deviceId = dev.id; pickDevice(); };
+      box.appendChild(b);
+    }
+    const auto = document.createElement('button');
+    auto.className = 'pickrow';
+    auto.textContent = (saved ? '' : '● ') + 'Choose automatically';
+    auto.onclick = () => { store.del('nd_device'); state.deviceId = null; pickDevice(); };
+    box.appendChild(auto);
+  }catch(e){
+    box.innerHTML = '<div class="pickmsg"></div>';
+    box.firstChild.textContent = e.message === 'NODEVICE' ? 'No device is reachable right now.' : e.message;
+  }
+}
 
 /* ---------- playlist picker ---------- */
 async function pickPlaylist(){
@@ -809,6 +893,7 @@ $('showArt').onchange = e => {
 $('openPanel').onclick  = openPanel;
 $('diagBtn').onclick    = diagnose;
 $('pickBtn').onclick    = pickPlaylist;
+$('devBtn').onclick     = pickDevice;
 $('closePanel').onclick = ()=> $('panel').classList.remove('open');
 $('saveBtn').onclick = async ()=>{
   store.set('nd_client_id', $('clientId').value.trim());
@@ -820,8 +905,13 @@ $('saveBtn').onclick = async ()=>{
     login();
   }
 };
+$('freshRound').onclick = ()=>{
+  resetPlayed();
+  $('nextBtn').textContent = 'Play a song';
+  toast('Play history cleared. Scores kept.');
+};
 $('resetAll').onclick = ()=>{
-  ['nd_client_id','nd_playlist','nd_token','nd_refresh','nd_expires','nd_verifier','nd_scopes','nd_players','nd_years','nd_showart','nd_limit'].forEach(store.del);
+  ['nd_client_id','nd_playlist','nd_token','nd_refresh','nd_expires','nd_verifier','nd_scopes','nd_players','nd_years','nd_showart','nd_limit','nd_device','nd_played'].forEach(store.del);
   location.href = REDIRECT_URI;
 };
 
