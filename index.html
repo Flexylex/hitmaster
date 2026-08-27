@@ -452,11 +452,16 @@ async function mbGet(query){
   return r.json();
 }
 
-/* Strip remaster/edit noise and Lucene metacharacters before querying. */
+/* Titles carrying a reissue marker have their own ISRC pointing at the
+   remaster, not the original recording. Detect them so we can skip it. */
+const REISSUE = /\b(?:re-?master(?:ed|s)?|re-?issued?|anniversary\s+edition|deluxe\s+edition|expanded\s+edition|remasterizad\w*)\b/i;
+const isReissue = name => REISSUE.test(String(name||''));
+
+/* Strip reissue/version noise and Lucene metacharacters before querying. */
 function clean(s){
   return String(s||'')
-    .replace(/\s*[([][^)\]]*(remaster|remix|live|version|edit|mix|mono|stereo|deluxe|anniversary|bonus|feat)[^)\]]*[)\]]/ig,'')
-    .replace(/\s*-\s*(remaster|remastered|radio edit|single version|live|mono|stereo).*$/i,'')
+    .replace(/\s*[([][^)\]]*(remaster|remix|live|version|edit|mix|mono|stereo|deluxe|anniversary|expanded|edition|bonus|reissue|acoustic|instrumental|feat)[^)\]]*[)\]]/ig,'')
+    .replace(/\s*[-–—]\s*(?:[\w'’.]+\s+){0,3}?(?:re-?master(?:ed)?|re-?issued?|anniversary|deluxe|expanded|edition|mono|stereo|version|edit|remix|mix|live|acoustic|instrumental)\b.*$/i,'')
     .replace(/[+\-&|!(){}[\]^"~*?:\\/]/g,' ')
     .replace(/\s+/g,' ').trim();
 }
@@ -497,8 +502,11 @@ async function resolveYear(t){
   if(album >= 1900 && album <= NOW) cands.push({y: album, s: 'Spotify album'});
 
   let gotMB = false;
+  const reissue = isReissue(t.name);
 
-  if(t.isrc){
+  // A reissue's ISRC identifies the remaster, so it would only confirm the
+  // late date we are trying to get past. Go straight to the title search.
+  if(t.isrc && !reissue){
     try{
       const ys = yearsFrom(await mbQueue(() => mbGet(`isrc:${t.isrc}`)), 0);
       if(ys.length){ cands.push({y: Math.min(...ys), s: 'MusicBrainz · ISRC'}); gotMB = true; }
@@ -508,7 +516,18 @@ async function resolveYear(t){
     try{
       const q = `recording:"${clean(t.name)}" AND artist:"${clean(t.artist.split(',')[0])}"`;
       const ys = yearsFrom(await mbQueue(() => mbGet(q)), 90);
-      if(ys.length){ cands.push({y: Math.min(...ys), s: 'MusicBrainz · title'}); gotMB = true; }
+      if(ys.length){
+        cands.push({y: Math.min(...ys), s: reissue ? 'MusicBrainz · original' : 'MusicBrainz · title'});
+        gotMB = true;
+      }
+    }catch{}
+  }
+  // Only if the title search found nothing: a reissue ISRC still beats a
+  // compilation album's year, so it is worth having as a last resort.
+  if(!gotMB && t.isrc && reissue){
+    try{
+      const ys = yearsFrom(await mbQueue(() => mbGet(`isrc:${t.isrc}`)), 0);
+      if(ys.length){ cands.push({y: Math.min(...ys), s: 'MusicBrainz · reissue'}); gotMB = true; }
     }catch{}
   }
   if(!gotMB){
