@@ -73,20 +73,26 @@
     position:absolute;bottom:20px;left:0;right:0;text-align:center;
     font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:rgba(245,239,230,.42);
   }
-  /* front = catalogue entry */
+  /* front = T3 matched pair over a year block */
   .front{
     transform:rotateY(180deg);background:var(--paper);color:var(--ink-deep);
-    display:flex;flex-direction:column;padding:22px 20px;text-align:left;
+    display:flex;flex-direction:column;padding:22px 18px;text-align:center;
   }
-  .front .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:rgba(27,16,41,.5)}
+  .pair{flex:2;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .artist{
+    font-weight:800;font-size:clamp(21px,7.4vw,29px);
+    letter-spacing:-.02em;line-height:1.05;margin:0;
+  }
+  .title{
+    font-weight:400;font-size:clamp(18px,6.3vw,24px);
+    letter-spacing:.01em;line-height:1.25;margin:14px 0 0;
+  }
+  .yearblock{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center}
   .year{
     font-family:var(--mono);font-weight:500;line-height:.86;
-    font-size:clamp(62px,21vw,86px);letter-spacing:-.04em;margin:6px 0 0;
+    font-size:clamp(50px,16.5vw,70px);letter-spacing:-.04em;margin:0;
   }
-  .rule{height:2px;background:var(--ink-deep);opacity:.85;margin:16px 0 14px}
-  .title{font-size:23px;font-weight:800;line-height:1.12;letter-spacing:-.02em;margin:0}
-  .artist{font-size:15px;font-weight:400;margin:7px 0 0;color:rgba(27,16,41,.72)}
-  .front .foot{margin-top:auto;font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:rgba(27,16,41,.42)}
+  .front .foot{margin-top:11px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:rgba(27,16,41,.42)}
 
   /* ---- controls ---- */
   .controls{margin:22px auto 0;width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px}
@@ -215,12 +221,14 @@
         <div class="tap-hint">TAP TO REVEAL</div>
       </div>
       <div class="face front">
-        <div class="eyebrow">RELEASED</div>
-        <div class="year" id="fYear">—</div>
-        <div class="rule"></div>
-        <h3 class="title" id="fTitle">—</h3>
-        <p class="artist" id="fArtist">—</p>
-        <div class="foot" id="fFoot">TAP TO HIDE</div>
+        <div class="pair">
+          <p class="artist" id="fArtist">—</p>
+          <h3 class="title" id="fTitle">—</h3>
+        </div>
+        <div class="yearblock">
+          <div class="year" id="fYear">—</div>
+          <div class="foot" id="fFoot">—</div>
+        </div>
       </div>
     </button>
   </div>
