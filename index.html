@@ -340,12 +340,19 @@ async function api(path, opts={}){
   const r = await fetch('https://api.spotify.com/v1'+path, {
     ...opts, headers:{Authorization:'Bearer '+t, 'Content-Type':'application/json', ...(opts.headers||{})}});
   if(r.status === 204) return null;
+
+  // Player endpoints can answer 202 with a plain-text body such as "Accepted",
+  // so never assume the response parses as JSON.
+  const raw = await r.text();
+  let data = null;
+  if(raw){ try{ data = JSON.parse(raw); }catch{ data = null; } }
+
   if(!r.ok){
-    let m=''; try{ m=(await r.json()).error?.message||''; }catch{}
     if(r.status === 404 && path.startsWith('/me/player')) throw new Error('NODEVICE');
-    throw new Error(`${r.status} on ${path.split('?')[0]} — ${m || 'Spotify gave no detail'}`);
+    const detail = data?.error?.message || raw.slice(0,80) || 'Spotify gave no detail';
+    throw new Error(`${r.status} on ${path.split('?')[0]} — ${detail}`);
   }
-  return r.json();
+  return data;
 }
 
 function playlistId(input){
@@ -536,6 +543,7 @@ async function nextSong(){
   try{
     await playTrack(t.uri);
     state.current = t; state.played.push(t.uri); state.round++;
+    state.paused = false; $('pauseBtn').textContent = 'PAUSE';
     $('fYear').textContent  = t.year;
     $('fTitle').textContent = t.name;
     $('fArtist').textContent= t.artist;
@@ -719,7 +727,17 @@ $('resetAll').onclick = ()=>{
 
 $('card').onclick    = ()=> setFlipped(!$('card').classList.contains('flipped'));
 $('nextBtn').onclick = nextSong;
-$('pauseBtn').onclick  = async ()=>{ try{ await api('/me/player/pause',{method:'PUT'}); }catch(e){ handle(e); } };
+$('pauseBtn').onclick  = async ()=>{
+  try{
+    if(state.paused){
+      await api(`/me/player/play?device_id=${state.deviceId||''}`, {method:'PUT'});
+      state.paused = false; $('pauseBtn').textContent = 'PAUSE';
+    }else{
+      await api('/me/player/pause', {method:'PUT'});
+      state.paused = true;  $('pauseBtn').textContent = 'RESUME';
+    }
+  }catch(e){ handle(e); }
+};
 $('replayBtn').onclick = async ()=>{
   if(!state.current) return toast('Nothing to replay yet.');
   try{ await playTrack(state.current.uri); }catch(e){ handle(e); }
