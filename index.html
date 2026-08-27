@@ -206,6 +206,12 @@
       <p class="hint">Useful for soundtracks, where the cover names the film. Never shown face down.</p>
     </div>
 
+    <div class="field">
+      <label>5 — Play limit</label>
+      <input id="playLimit" type="number" min="0" max="600" step="5" inputmode="numeric">
+      <p class="hint">Seconds before the song pauses itself. Resume starts a fresh countdown. Use 0 for no limit.</p>
+    </div>
+
     <button class="primary" id="saveBtn">Save and connect Spotify</button>
 
     <div class="row" style="margin-top:12px">
@@ -563,6 +569,39 @@ async function resolveYear(t){
 }
 
 /* ---------- game ---------- */
+/* ---------- play limit ---------- */
+function limitSecs(){
+  const n = parseInt(store.get('nd_limit') ?? '40', 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+let ticker = null, endsAt = 0;
+
+function stopClock(){ clearInterval(ticker); ticker = null; }
+
+function startClock(){
+  stopClock();
+  state.paused = false;
+  const s = limitSecs();
+  if(!s){ $('pauseBtn').textContent = 'PAUSE'; return; }
+  endsAt = Date.now() + s*1000;
+  tick();
+  ticker = setInterval(tick, 500);
+}
+
+/* Reads the clock rather than counting ticks, so a throttled background
+   timer still expires at the right moment. */
+function tick(){
+  const left = Math.ceil((endsAt - Date.now())/1000);
+  if(left <= 0){ stopClock(); autoPause(); return; }
+  $('pauseBtn').textContent = 'PAUSE · ' + left;
+}
+
+async function autoPause(){
+  try{ await api('/me/player/pause', {method:'PUT'}); }catch{}
+  state.paused = true;
+  $('pauseBtn').textContent = 'RESUME';
+}
+
 /* ---------- cover art ---------- */
 const artOn = () => store.get('nd_showart') === '1';
 function paintCover(t){
@@ -590,7 +629,7 @@ async function nextSong(){
   try{
     await playTrack(t.uri);
     state.current = t; state.played.push(t.uri); state.round++;
-    state.paused = false; $('pauseBtn').textContent = 'PAUSE';
+    startClock();
     $('fYear').textContent  = t.year;
     $('fTitle').textContent = t.name;
     $('fArtist').textContent= t.artist;
@@ -754,6 +793,13 @@ $('copyUri').onclick = ()=>{ navigator.clipboard?.writeText(REDIRECT_URI); toast
 $('clientId').value    = store.get('nd_client_id')  || '';
 $('playlistUrl').value = store.get('nd_playlist')   || '';
 
+$('playLimit').value = limitSecs();
+$('playLimit').onchange = e => {
+  const n = Math.max(0, Math.min(600, parseInt(e.target.value, 10) || 0));
+  e.target.value = n;
+  store.set('nd_limit', String(n));
+};
+
 $('showArt').checked = artOn();
 $('showArt').onchange = e => {
   store.set('nd_showart', e.target.checked ? '1' : '0');
@@ -775,7 +821,7 @@ $('saveBtn').onclick = async ()=>{
   }
 };
 $('resetAll').onclick = ()=>{
-  ['nd_client_id','nd_playlist','nd_token','nd_refresh','nd_expires','nd_verifier','nd_scopes','nd_players','nd_years','nd_showart'].forEach(store.del);
+  ['nd_client_id','nd_playlist','nd_token','nd_refresh','nd_expires','nd_verifier','nd_scopes','nd_players','nd_years','nd_showart','nd_limit'].forEach(store.del);
   location.href = REDIRECT_URI;
 };
 
@@ -785,16 +831,17 @@ $('pauseBtn').onclick  = async ()=>{
   try{
     if(state.paused){
       await api(`/me/player/play?device_id=${state.deviceId||''}`, {method:'PUT'});
-      state.paused = false; $('pauseBtn').textContent = 'PAUSE';
+      startClock();                       // a fresh full countdown
     }else{
       await api('/me/player/pause', {method:'PUT'});
-      state.paused = true;  $('pauseBtn').textContent = 'RESUME';
+      stopClock();
+      state.paused = true; $('pauseBtn').textContent = 'RESUME';
     }
   }catch(e){ handle(e); }
 };
 $('replayBtn').onclick = async ()=>{
   if(!state.current) return toast('Nothing to replay yet.');
-  try{ await playTrack(state.current.uri); }catch(e){ handle(e); }
+  try{ await playTrack(state.current.uri); startClock(); }catch(e){ handle(e); }
 };
 $('addPlayer').onclick = ()=>{
   const n = $('newPlayer').value.trim(); if(!n) return;
