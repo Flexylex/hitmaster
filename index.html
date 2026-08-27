@@ -159,7 +159,7 @@
 <!-- ============ SETUP PANEL ============ -->
 <div class="panel" id="panel">
   <div class="inner">
-    <h1>Set up Hitmaster</h1>
+    <h1>Set up Hitmaster #2</h1>
     <p class="lede">One-time setup. Your Spotify app does the playing — this page just tells it what to play.</p>
 
     <div id="authStatus"></div>
@@ -200,7 +200,7 @@
 <!-- ============ GAME ============ -->
 <div class="wrap">
   <header>
-    <div class="mark">Hitmaster<span>·</span>#2</div>
+    <div class="mark">HITMASTER<span> #2</span></div>
     <div class="hdr-right">
       <div class="round" id="round">—</div>
       <button class="gear" id="openPanel" aria-label="Settings">⚙</button>
@@ -360,6 +360,7 @@ async function loadPlaylist(){
         out.push({
           uri: t.uri, name: t.name,
           artist: (t.artists||[]).map(a=>a.name).join(', '),
+          isrc: t.external_ids?.isrc || null,
           year: (t.album?.release_date||'').slice(0,4) || '????'
         });
       }
@@ -408,6 +409,106 @@ async function playTrack(uri){
   }
 }
 
+/* ================= RELEASE YEAR RESOLUTION =================
+   Spotify reports the year of whichever album it is streaming, so remasters
+   and compilations lie. We look for an earlier, better-sourced date and take
+   the earliest plausible candidate. Results are cached permanently by URI.
+   ========================================================== */
+const NOW = new Date().getFullYear();
+const MB = 'https://musicbrainz.org/ws/2/recording';
+
+/* MusicBrainz allows ~1 request/sec per IP. Serialise everything through
+   one chain with a spacer so we never trip the 503 throttle. */
+let mbChain = Promise.resolve(), mbLast = 0;
+function mbQueue(task){
+  const run = mbChain.then(async () => {
+    const gap = 1100 - (Date.now() - mbLast);
+    if(gap > 0) await new Promise(r => setTimeout(r, gap));
+    mbLast = Date.now();
+    return task();
+  });
+  mbChain = run.then(()=>{}, ()=>{});
+  return run;
+}
+async function mbGet(query){
+  const r = await fetch(`${MB}?query=${encodeURIComponent(query)}&fmt=json&limit=25`,
+                        {headers:{Accept:'application/json'}});
+  if(!r.ok) throw new Error('musicbrainz ' + r.status);
+  return r.json();
+}
+
+/* Strip remaster/edit noise and Lucene metacharacters before querying. */
+function clean(s){
+  return String(s||'')
+    .replace(/\s*[([][^)\]]*(remaster|remix|live|version|edit|mix|mono|stereo|deluxe|anniversary|bonus|feat)[^)\]]*[)\]]/ig,'')
+    .replace(/\s*-\s*(remaster|remastered|radio edit|single version|live|mono|stereo).*$/i,'')
+    .replace(/[+\-&|!(){}[\]^"~*?:\\/]/g,' ')
+    .replace(/\s+/g,' ').trim();
+}
+const norm = s => String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+
+function yearsFrom(json, minScore){
+  const ys = [];
+  const add = d => { const y = parseInt(String(d||'').slice(0,4),10);
+                     if(y >= 1900 && y <= NOW) ys.push(y); };
+  for(const rec of (json?.recordings || [])){
+    if(minScore && (rec.score ?? 0) < minScore) continue;
+    add(rec['first-release-date']);
+    for(const rel of (rec.releases || [])){
+      add(rel.date);
+      add(rel['release-group']?.['first-release-date']);
+    }
+  }
+  return ys;
+}
+
+/* Last resort: ask Spotify for every album carrying this recording. */
+async function spotifyEarliest(t){
+  const q = `track:"${clean(t.name)}" artist:"${clean(t.artist.split(',')[0])}"`;
+  const d = await api(`/search?q=${encodeURIComponent(q)}&type=track&limit=10`);
+  const ys = (d?.tracks?.items || [])
+    .filter(x => norm(x.name) === norm(t.name))
+    .map(x => parseInt((x.album?.release_date || '').slice(0,4), 10))
+    .filter(y => y >= 1900 && y <= NOW);
+  return ys.length ? Math.min(...ys) : null;
+}
+
+async function resolveYear(t){
+  const cache = J.get('nd_years', {});
+  if(cache[t.uri]) return cache[t.uri];
+
+  const cands = [];
+  const album = parseInt(t.year, 10);
+  if(album >= 1900 && album <= NOW) cands.push({y: album, s: 'Spotify album'});
+
+  let gotMB = false;
+
+  if(t.isrc){
+    try{
+      const ys = yearsFrom(await mbQueue(() => mbGet(`isrc:${t.isrc}`)), 0);
+      if(ys.length){ cands.push({y: Math.min(...ys), s: 'MusicBrainz · ISRC'}); gotMB = true; }
+    }catch{}
+  }
+  if(!gotMB){
+    try{
+      const q = `recording:"${clean(t.name)}" AND artist:"${clean(t.artist.split(',')[0])}"`;
+      const ys = yearsFrom(await mbQueue(() => mbGet(q)), 90);
+      if(ys.length){ cands.push({y: Math.min(...ys), s: 'MusicBrainz · title'}); gotMB = true; }
+    }catch{}
+  }
+  if(!gotMB){
+    try{
+      const y = await spotifyEarliest(t);
+      if(y) cands.push({y, s: 'earliest Spotify album'});
+    }catch{}
+  }
+
+  if(!cands.length) return {y: t.year, s: 'unknown'};
+  const best = cands.reduce((a,b) => b.y < a.y ? b : a);
+  cache[t.uri] = best; J.set('nd_years', cache);
+  return best;
+}
+
 /* ---------- game ---------- */
 function setFlipped(on){
   $('card').classList.toggle('flipped', on);
@@ -430,9 +531,18 @@ async function nextSong(){
     $('fYear').textContent  = t.year;
     $('fTitle').textContent = t.name;
     $('fArtist').textContent= t.artist;
+    $('fFoot').textContent  = 'CHECKING RELEASE YEAR…';
     $('round').textContent  = `${state.played.length} / ${state.tracks.length}`;
     $('nextBtn').textContent = 'Next song';
     keepAwake();
+
+    // Runs while the song plays. Not awaited — the card is face-down anyway.
+    resolveYear(t).then(r => {
+      if(state.current !== t) return;          // a new song already started
+      t.year = String(r.y);
+      $('fYear').textContent = r.y;
+      $('fFoot').textContent = String(r.s).toUpperCase();
+    });
   }catch(e){ handle(e); $('nextBtn').textContent = 'Play a song'; }
   $('nextBtn').disabled = false;
 }
@@ -595,7 +705,7 @@ $('saveBtn').onclick = async ()=>{
   }
 };
 $('resetAll').onclick = ()=>{
-  ['nd_client_id','nd_playlist','nd_token','nd_refresh','nd_expires','nd_verifier','nd_scopes','nd_players'].forEach(store.del);
+  ['nd_client_id','nd_playlist','nd_token','nd_refresh','nd_expires','nd_verifier','nd_scopes','nd_players','nd_years'].forEach(store.del);
   location.href = REDIRECT_URI;
 };
 
