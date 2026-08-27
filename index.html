@@ -78,10 +78,12 @@
     transform:rotateY(180deg);background:var(--paper);color:var(--ink-deep);
     display:flex;flex-direction:column;padding:22px 18px;text-align:center;
   }
-  .pair{flex:2;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .pair{flex:2;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0}
+  .card.hasart .pair{flex:2.6}
   .cover{
-    width:clamp(70px,24vw,100px);aspect-ratio:1;object-fit:cover;display:block;
-    border-radius:7px;margin:0 0 15px;border:1px solid rgba(27,16,41,.14);
+    width:clamp(140px,48vw,200px);aspect-ratio:1;max-height:58%;
+    object-fit:cover;display:block;
+    border-radius:9px;margin:0 0 13px;border:1px solid rgba(27,16,41,.14);
   }
   .artist{
     font-weight:800;font-size:clamp(21px,7.4vw,29px);
@@ -564,9 +566,10 @@ async function resolveYear(t){
 /* ---------- cover art ---------- */
 const artOn = () => store.get('nd_showart') === '1';
 function paintCover(t){
-  const el = $('fCover');
-  if(artOn() && t?.art){ el.src = t.art; el.hidden = false; }
+  const el = $('fCover'), on = artOn() && !!t?.art;
+  if(on){ el.src = t.art; el.hidden = false; }
   else { el.hidden = true; el.removeAttribute('src'); }
+  $('card').classList.toggle('hasart', on);
 }
 
 function setFlipped(on){
